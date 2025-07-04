@@ -1,0 +1,139 @@
+/* Custom CSS for AI Call Center App */
+
+/* Main app styling */
+.main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
+
+/* Call simulator styling */
+.call-active {
+    border: 2px solid #00ff00;
+    border-radius: 10px;
+    padding: 10px;
+    background-color: rgba(0, 255, 0, 0.1);
+}
+
+.call-inactive {
+    border: 2px solid #cccccc;
+    border-radius: 10px;
+    padding: 10px;
+    background-color: rgba(128, 128, 128, 0.1);
+}
+
+/* Chat message styling */
+.chat-message {
+    padding: 8px 12px;
+    margin: 5px 0;
+    border-radius: 8px;
+    border-left: 4px solid #1f77b4;
+}
+
+.customer-message {
+    background-color: rgba(31, 119, 180, 0.1);
+    border-left-color: #1f77b4;
+}
+
+.agent-message {
+    background-color: rgba(255, 127, 14, 0.1);
+    border-left-color: #ff7f0e;
+}
+
+/* Suggestion box styling */
+.suggestion-box {
+    background-color: rgba(44, 160, 44, 0.1);
+    border: 1px solid #2ca02c;
+    border-radius: 8px;
+    padding: 10px;
+    margin: 5px 0;
+}
+
+/* Status indicators */
+.status-active {
+    color: #2ca02c;
+    font-weight: bold;
+}
+
+.status-processing {
+    color: #ff7f0e;
+    font-weight: bold;
+}
+
+.status-error {
+    color: #d62728;
+    font-weight: bold;
+}
+
+/* Data table styling */
+.data-table {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Metric cards */
+.metric-card {
+    background-color: rgba(248, 249, 250, 0.8);
+    border-radius: 8px;
+    padding: 15px;
+    text-align: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Button styling */
+.stButton > button {
+    border-radius: 6px;
+    border: none;
+    transition: all 0.3s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+/* Progress bars */
+.progress-bar {
+    background-color: #e0e0e0;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    background-color: #2ca02c;
+    height: 20px;
+    transition: width 0.3s ease;
+}
+
+/* WebRTC status indicator */
+.webrtc-status {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px;
+    border-radius: 8px;
+    background-color: rgba(44, 160, 44, 0.1);
+    border: 1px solid #2ca02c;
+}
+
+/* File upload area */
+.upload-area {
+    border: 2px dashed #cccccc;
+    border-radius: 8px;
+    padding: 20px;
+    text-align: center;
+    background-color: rgba(248, 249, 250, 0.5);
+    transition: all 0.3s ease;
+}
+
+.upload-area:hover {
+    border-color: #1f77b4;
+    background-color: rgba(31, 119, 180, 0.05);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .main .block-container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+}
