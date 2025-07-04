@@ -13,6 +13,7 @@ import io
 import threading
 import tempfile
 import os
+import concurrent.futures
 
 # Set page configuration
 st.set_page_config(
@@ -25,9 +26,11 @@ st.set_page_config(
 # Load custom CSS
 def load_css():
     try:
-        with open("style.css") as f:
+        css_file_path = os.path.join(os.path.dirname(__file__), "style.css")
+        with open(css_file_path) as f:
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
     except FileNotFoundError:
+        st.warning("⚠️ CSS file not found. Using default styling.")
         pass  # CSS file not found, continue without styling
 
 load_css()
@@ -119,7 +122,6 @@ class TTSManager:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     # If loop is running, create a new thread
-                    import concurrent.futures
                     with concurrent.futures.ThreadPoolExecutor() as executor:
                         future = executor.submit(asyncio.run, self._generate_edge_tts_async(text, voice))
                         tmp_filename = future.result(timeout=30)
@@ -468,33 +470,143 @@ def live_call_simulator_page():
     if st.session_state.call_active:
         st.markdown("---")
         
-        # Main Call Interface
-        left_col, center_col, right_col = st.columns([3, 1, 3])
+        # Connection Status
+        connection_status = st.container()
+        with connection_status:
+            st.markdown("""
+            <div class="connection-status status-connected">
+                <span class="status-dot"></span>
+                <strong>🟢 Call Active</strong> - WebRTC Connected | Audio Quality: HD Voice | Latency: {}ms
+            </div>
+            """.format(random.randint(20, 50)), unsafe_allow_html=True)
         
-        # Customer Side (Left)
-        with left_col:
-            st.subheader("👤 Customer (US Voice)")
+        # Main Chat Interface
+        main_col, sidebar_col = st.columns([2, 1])
+        
+        with main_col:
+            st.subheader("💬 Live Conversation")
             
-            # Customer chat container
-            customer_container = st.container()
-            with customer_container:
-                st.markdown("**Live Transcript:**")
-                customer_chat = st.container(height=300)
-                
-                # Display customer messages
-                for msg in st.session_state.chat_history:
+            # Initialize typing indicator state
+            if 'typing_customer' not in st.session_state:
+                st.session_state.typing_customer = False
+            if 'typing_agent' not in st.session_state:
+                st.session_state.typing_agent = False
+            
+            # Display messages using Streamlit components instead of raw HTML
+            for msg in st.session_state.chat_history:
+                # Create a container for each message
+                with st.container():
                     if msg['speaker'] == 'Customer':
-                        with customer_chat:
-                            st.markdown(f"**🕐 {msg['time']}**")
-                            st.markdown(f"🗣️ *{msg['text']}*")
-                            if sentiment_analysis:
-                                sentiment_color = "🟢" if msg['sentiment'] == "Positive" else "🟡" if msg['sentiment'] == "Neutral" else "🔴"
-                                st.markdown(f"{sentiment_color} {msg['sentiment']}")
-                            if 'audio_played' in msg and msg['audio_played']:
-                                st.markdown("🔊 *Audio played*")
-                            st.markdown("---")
+                        # Customer message styling
+                        st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #007bff, #0056b3);
+                            color: white;
+                            padding: 10px 15px;
+                            margin: 8px 0;
+                            border-radius: 18px;
+                            max-width: 80%;
+                            margin-left: auto;
+                            margin-right: 0;
+                            border-bottom-right-radius: 5px;
+                            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.3);
+                        ">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                                👤 <strong>{msg['speaker']}</strong>
+                                <span style="
+                                    display: inline-block;
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 50%;
+                                    background-color: {'#28a745' if msg.get('sentiment') == 'Positive' else '#ffc107' if msg.get('sentiment') == 'Neutral' else '#dc3545'};
+                                "></span>
+                            </div>
+                            <div style="margin-bottom: 5px; line-height: 1.4;">{msg['text']}</div>
+                            <div style="font-size: 0.75em; opacity: 0.8; margin-top: 5px;">{msg['time']}</div>
+                            <div style="font-size: 0.7em; opacity: 0.7; margin-top: 3px;">
+                                {'🔊 Audio played' if msg.get('audio_played', False) else '🔇 Audio pending' if st.session_state.auto_speak else '🔇 Audio disabled'}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        # Agent message styling
+                        st.markdown(f"""
+                        <div style="
+                            background: linear-gradient(135deg, #28a745, #1e7e34);
+                            color: white;
+                            padding: 10px 15px;
+                            margin: 8px 0;
+                            border-radius: 18px;
+                            max-width: 80%;
+                            margin-left: 0;
+                            margin-right: auto;
+                            border-bottom-left-radius: 5px;
+                            box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+                        ">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 5px;">
+                                👨‍💼 <strong>{msg['speaker']}</strong>
+                                <span style="
+                                    display: inline-block;
+                                    width: 8px;
+                                    height: 8px;
+                                    border-radius: 50%;
+                                    background-color: #007bff;
+                                "></span>
+                            </div>
+                            <div style="margin-bottom: 5px; line-height: 1.4;">{msg['text']}</div>
+                            <div style="font-size: 0.75em; opacity: 0.8; margin-top: 5px;">{msg['time']}</div>
+                            <div style="font-size: 0.7em; opacity: 0.7; margin-top: 3px;">
+                                {'🔊 Audio played' if msg.get('audio_played', False) else '🔇 Audio pending' if st.session_state.auto_speak else '🔇 Audio disabled'}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
             
-            # Customer input simulation
+            # Add typing indicators using Streamlit
+            if st.session_state.typing_customer:
+                st.markdown("""
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    padding: 10px 15px;
+                    margin: 8px 0;
+                    margin-right: auto;
+                    background: #f1f3f4;
+                    border-radius: 18px;
+                    max-width: 80px;
+                ">
+                    <div style="display: flex; gap: 3px;">
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #9e9e9e;"></div>
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #9e9e9e;"></div>
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #9e9e9e;"></div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            if st.session_state.typing_agent:
+                st.markdown("""
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    padding: 10px 15px;
+                    margin: 8px 0;
+                    margin-left: auto;
+                    margin-right: 0;
+                    background: #f1f3f4;
+                    border-radius: 18px;
+                    max-width: 80px;
+                ">
+                    <div style="display: flex; gap: 3px;">
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #9e9e9e;"></div>
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #9e9e9e;"></div>
+                        <div style="width: 8px; height: 8px; border-radius: 50%; background-color: #9e9e9e;"></div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Control buttons
+            col1, col2, col3, col4, col5 = st.columns(5)
+            
+            # Customer messages
             customer_messages = [
                 "Hi, I'm having trouble with my internet connection.",
                 "It's been slow for the past three days.",
@@ -508,10 +620,22 @@ def live_call_simulator_page():
                 "Thank you for your help with this."
             ]
             
-            col_speak, col_manual = st.columns(2)
+            # Agent responses
+            agent_responses = [
+                "Thank you for contacting us. I'll help you with your internet issue.",
+                "I understand how frustrating slow internet can be.",
+                "Let me check your account and connection status.",
+                "I can see there might be a signal issue in your area.",
+                "Let's try some troubleshooting steps together.",
+                "Can you please check if all cables are securely connected?",
+                "I'm scheduling a priority technician visit for you.",
+                "Is there anything else I can help you with today?",
+                "I'll send you a follow-up email with the details.",
+                "Thank you for your patience while we resolve this."
+            ]
             
-            with col_speak:
-                if st.button("🎤 Customer Speaks", type="primary"):
+            with col1:
+                if st.button("👤 Customer Speaks", type="primary"):
                     if customer_messages:
                         msg = random.choice(customer_messages)
                         sentiment = random.choice(["Positive", "Neutral", "Negative"])
@@ -557,83 +681,14 @@ def live_call_simulator_page():
                                 
                                 if success:
                                     new_message['audio_played'] = True
+                                    # Update the message in chat history
+                                    st.session_state.chat_history[-1]['audio_played'] = True
                         
                         st.session_state.call_duration += random.randint(5, 15)
                         st.rerun()
             
-            with col_manual:
-                if st.button("🔊 Replay Last"):
-                    # Replay last customer message
-                    customer_msgs = [msg for msg in st.session_state.chat_history if msg['speaker'] == 'Customer']
-                    if customer_msgs:
-                        last_msg = customer_msgs[-1]['text']
-                        with st.spinner("🔊 Replaying..."):
-                            if st.session_state.tts_mode == "offline":
-                                tts_manager.speak_offline(last_msg, "customer", tts_rate if 'tts_rate' in locals() else 200)
-                            else:
-                                tts_manager.speak_edge_tts(last_msg, "customer", use_alt_voice if 'use_alt_voice' in locals() else False)
-        
-        # WebRTC Simulation (Center)
-        with center_col:
-            st.markdown("### 🌐 WebRTC")
-            st.markdown("**Connection:**")
-            st.success("🟢 Connected")
-            st.markdown("**Audio Quality:**")
-            st.success("🔊 HD Voice")
-            st.markdown("**Latency:**")
-            st.info(f"⚡ {random.randint(20, 50)}ms")
-            
-            st.markdown("**Voice Modes:**")
-            st.info("👤 Customer: US Neural Voice")
-            st.info("👨‍💼 Agent: UK Neural Voice")
-            st.markdown("**🤖 Powered by:**")
-            if st.session_state.get('tts_mode', 'offline') == 'offline':
-                st.info("🖥️ Local TTS Engine")
-            else:
-                st.info("🌟 Microsoft Edge TTS")
-            
-            # Real-time metrics
-            if st.button("📊 Update"):
-                st.rerun()
-        
-        # Agent Side (Right)
-        with right_col:
-            st.subheader("👨‍💼 Agent (UK Voice)")
-            
-            # Agent chat container
-            agent_container = st.container()
-            with agent_container:
-                st.markdown("**Live Transcript:**")
-                agent_chat = st.container(height=300)
-                
-                # Display agent messages
-                for msg in st.session_state.chat_history:
-                    if msg['speaker'] == 'Agent':
-                        with agent_chat:
-                            st.markdown(f"**🕐 {msg['time']}**")
-                            st.markdown(f"🗣️ *{msg['text']}*")
-                            if 'audio_played' in msg and msg['audio_played']:
-                                st.markdown("🔊 *Audio played*")
-                            st.markdown("---")
-            
-            # Agent input simulation
-            agent_responses = [
-                "Thank you for contacting us. I'll help you with your internet issue.",
-                "I understand how frustrating slow internet can be.",
-                "Let me check your account and connection status.",
-                "I can see there might be a signal issue in your area.",
-                "Let's try some troubleshooting steps together.",
-                "Can you please check if all cables are securely connected?",
-                "I'm scheduling a priority technician visit for you.",
-                "Is there anything else I can help you with today?",
-                "I'll send you a follow-up email with the details.",
-                "Thank you for your patience while we resolve this."
-            ]
-            
-            col_respond, col_replay = st.columns(2)
-            
-            with col_respond:
-                if st.button("🎤 Agent Responds", type="primary"):
+            with col2:
+                if st.button("👨‍💼 Agent Responds", type="primary"):
                     if agent_responses:
                         response = random.choice(agent_responses)
                         current_time = datetime.now().strftime("%H:%M:%S")
@@ -658,12 +713,26 @@ def live_call_simulator_page():
                                 
                                 if success:
                                     new_message['audio_played'] = True
+                                    # Update the message in chat history
+                                    st.session_state.chat_history[-1]['audio_played'] = True
                         
                         st.session_state.call_duration += random.randint(3, 10)
                         st.rerun()
             
-            with col_replay:
-                if st.button("🔊 Replay Last"):
+            with col3:
+                if st.button("🔊 Replay Last Customer"):
+                    # Replay last customer message
+                    customer_msgs = [msg for msg in st.session_state.chat_history if msg['speaker'] == 'Customer']
+                    if customer_msgs:
+                        last_msg = customer_msgs[-1]['text']
+                        with st.spinner("🔊 Replaying..."):
+                            if st.session_state.tts_mode == "offline":
+                                tts_manager.speak_offline(last_msg, "customer", tts_rate if 'tts_rate' in locals() else 200)
+                            else:
+                                tts_manager.speak_edge_tts(last_msg, "customer", use_alt_voice if 'use_alt_voice' in locals() else False)
+        
+            with col4:
+                if st.button("🔊 Replay Last Agent"):
                     # Replay last agent message
                     agent_msgs = [msg for msg in st.session_state.chat_history if msg['speaker'] == 'Agent']
                     if agent_msgs:
@@ -673,57 +742,44 @@ def live_call_simulator_page():
                                 tts_manager.speak_offline(last_msg, "agent", tts_rate - 20 if 'tts_rate' in locals() else 180)
                             else:
                                 tts_manager.speak_edge_tts(last_msg, "agent", use_alt_voice if 'use_alt_voice' in locals() else False)
+            
+            with col5:
+                if st.button("🗑️ Clear Chat"):
+                    st.session_state.chat_history = []
+                    st.session_state.suggestions_history = []
+                    st.session_state.typing_customer = False
+                    st.session_state.typing_agent = False
+                    st.success("Chat cleared!")
+                    st.rerun()
         
-        # AI Suggestions Panel
-        st.markdown("---")
-        st.subheader("🤖 AI Live Suggestions & Voice Analytics")
-        
-        suggestions_col1, suggestions_col2 = st.columns([2, 1])
-        
-        with suggestions_col1:
-            st.markdown("**Real-time Agent Assistance:**")
-            suggestions_container = st.container(height=200)
+        # Sidebar with Controls and Analytics
+        with sidebar_col:
+            # WebRTC Status
+            st.markdown("### 🌐 Connection Status")
+            st.success("🟢 WebRTC Connected")
+            st.info(f"🔊 HD Voice Quality")
+            st.info(f"⚡ Latency: {random.randint(20, 50)}ms")
             
-            with suggestions_container:
-                for suggestion in reversed(st.session_state.suggestions_history[-5:]):  # Show last 5 suggestions
-                    st.markdown(f"**🕐 {suggestion['time']}** - Confidence: {suggestion['confidence']}%")
-                    st.info(f"💡 {suggestion['suggestion']}")
-                    st.markdown("---")
-        
-        with suggestions_col2:
-            st.markdown("**Voice & Quick Actions:**")
+            # Voice Settings
+            st.markdown("### 🎛️ Voice Settings")
+            st.info("👤 Customer: US Neural Voice")
+            st.info("👨‍💼 Agent: UK Neural Voice")
+            if st.session_state.get('tts_mode', 'offline') == 'offline':
+                st.info("🖥️ Local TTS Engine")
+            else:
+                st.info("🌟 Microsoft Edge TTS")
             
-            # Voice Test Buttons
-            st.markdown("**🎤 Voice Testing:**")
-            col_test1, col_test2 = st.columns(2)
-            
-            with col_test1:
-                if st.button("Test Customer Voice"):
-                    test_text = "Hello, this is a test of the customer voice."
-                    with st.spinner("🔊 Testing customer voice..."):
-                        if st.session_state.tts_mode == "offline":
-                            tts_manager.speak_offline(test_text, "customer")
-                        else:
-                            tts_manager.speak_edge_tts(test_text, "customer", use_alt_voice if 'use_alt_voice' in locals() else False)
-            
-            with col_test2:
-                if st.button("Test Agent Voice"):
-                    test_text = "Hello, this is a test of the agent voice."
-                    with st.spinner("🔊 Testing agent voice..."):
-                        if st.session_state.tts_mode == "offline":
-                            tts_manager.speak_offline(test_text, "agent")
-                        else:
-                            tts_manager.speak_edge_tts(test_text, "agent", use_alt_voice if 'use_alt_voice' in locals() else False)
-            
-            st.markdown("**📋 Call Actions:**")
-            if st.button("📋 Generate Summary"):
+            # Quick Actions
+            st.markdown("### 📋 Quick Actions")
+            if st.button("📋 Generate Summary", use_container_width=True):
                 st.success("Call summary generated!")
-            if st.button("📧 Send Follow-up"):
+            if st.button("📧 Send Follow-up", use_container_width=True):
                 st.success("Follow-up email queued!")
-            if st.button("🎫 Create Ticket"):
+            if st.button("🎫 Create Ticket", use_container_width=True):
                 st.success("Support ticket created!")
             
-            st.markdown("**📊 Call Analytics:**")
+            # Call Analytics
+            st.markdown("### 📊 Call Analytics")
             sentiment_counts = {"Positive": 0, "Neutral": 0, "Negative": 0}
             for msg in st.session_state.chat_history:
                 if msg['speaker'] == 'Customer' and 'sentiment' in msg:
@@ -736,11 +792,214 @@ def live_call_simulator_page():
             total_messages = len(st.session_state.chat_history)
             audio_played = len([msg for msg in st.session_state.chat_history if msg.get('audio_played', False)])
             
-            st.markdown("**🔊 Voice Metrics:**")
+            st.markdown("### 🔊 Voice Metrics")
             st.metric("Total Messages", total_messages)
             st.metric("Audio Played", audio_played)
             if total_messages > 0:
                 st.metric("Audio Coverage", f"{(audio_played/total_messages)*100:.1f}%")
+            
+            # Auto-refresh toggle
+            st.markdown("### 🔄 Real-time Updates")
+            auto_refresh = st.checkbox("Enable Auto-Refresh", value=False, help="Automatically refresh chat every 3 seconds")
+            
+            # Simulation mode
+            simulate_conversation = st.checkbox("Auto-Simulate Conversation", value=False, help="Automatically generate messages for demo")
+            
+            if auto_refresh or simulate_conversation:
+                # Show real-time status
+                st.markdown("🔄 **Real-time mode active**")
+                
+                                 # Auto-simulation logic
+                if simulate_conversation and len(st.session_state.chat_history) < 20:
+                    # Randomly add messages from customer or agent
+                    if random.random() < 0.3:  # 30% chance to add message each refresh
+                        speaker = random.choice(['Customer', 'Agent'])
+                        
+                        if speaker == 'Customer':
+                            customer_messages = [
+                                "Hi, I'm having trouble with my internet connection.",
+                                "It's been slow for the past three days.",
+                                "I've already tried restarting the router.",
+                                "The speed test shows only 10 Mbps instead of 100.",
+                                "This is really frustrating. I work from home.",
+                                "Can you help me fix this issue?",
+                                "I'm willing to try any troubleshooting steps.",
+                                "How long will this take to resolve?",
+                                "I need this fixed as soon as possible.",
+                                "Thank you for your help with this."
+                            ]
+                            
+                            # Avoid duplicate messages by checking recent history
+                            recent_messages = [msg['text'] for msg in st.session_state.chat_history[-3:] if msg['speaker'] == 'Customer']
+                            available_messages = [msg for msg in customer_messages if msg not in recent_messages]
+                            
+                            if available_messages:
+                                msg = random.choice(available_messages)
+                                sentiment = random.choice(["Positive", "Neutral", "Negative"])
+                                
+                                new_message = {
+                                    'speaker': 'Customer',
+                                    'text': msg,
+                                    'time': datetime.now().strftime("%H:%M:%S"),
+                                    'sentiment': sentiment,
+                                    'audio_played': st.session_state.auto_speak  # Set to True if auto-speak is enabled
+                                }
+                                
+                                # Generate AI suggestion
+                                suggestions = [
+                                    "Acknowledge the customer's frustration and apologize for the inconvenience.",
+                                    "Ask about the specific devices experiencing slow speeds.",
+                                    "Suggest checking cable connections and running a speed test.",
+                                    "Offer to schedule a technician visit if needed.",
+                                    "Provide the customer with a reference number for follow-up.",
+                                    "Explain the troubleshooting process step by step.",
+                                    "Ask about recent changes to their network setup.",
+                                    "Suggest checking for interference from other devices."
+                                ]
+                                
+                                suggestion = random.choice(suggestions)
+                                st.session_state.suggestions_history.append({
+                                    'time': new_message['time'],
+                                    'suggestion': suggestion,
+                                    'confidence': random.randint(85, 99)
+                                })
+                                
+                                st.session_state.chat_history.append(new_message)
+                            
+                        else:  # Agent
+                            agent_responses = [
+                                "Thank you for contacting us. I'll help you with your internet issue.",
+                                "I understand how frustrating slow internet can be.",
+                                "Let me check your account and connection status.",
+                                "I can see there might be a signal issue in your area.",
+                                "Let's try some troubleshooting steps together.",
+                                "Can you please check if all cables are securely connected?",
+                                "I'm scheduling a priority technician visit for you.",
+                                "Is there anything else I can help you with today?",
+                                "I'll send you a follow-up email with the details.",
+                                "Thank you for your patience while we resolve this."
+                            ]
+                            
+                            # Avoid duplicate messages by checking recent history
+                            recent_messages = [msg['text'] for msg in st.session_state.chat_history[-3:] if msg['speaker'] == 'Agent']
+                            available_messages = [msg for msg in agent_responses if msg not in recent_messages]
+                            
+                            if available_messages:
+                                new_message = {
+                                    'speaker': 'Agent',
+                                    'text': random.choice(available_messages),
+                                    'time': datetime.now().strftime("%H:%M:%S"),
+                                    'sentiment': 'Professional',
+                                    'audio_played': st.session_state.auto_speak  # Set to True if auto-speak is enabled
+                                }
+                                
+                                st.session_state.chat_history.append(new_message)
+                        
+                        st.session_state.call_duration += random.randint(3, 8)
+                        
+                        # Show typing indicator for next message
+                        if speaker == 'Customer':
+                            st.session_state.typing_agent = True
+                        else:
+                            st.session_state.typing_customer = True
+                
+                # Clear typing indicators after some time
+                if random.random() < 0.7:  # 70% chance to clear typing indicators
+                    st.session_state.typing_customer = False
+                    st.session_state.typing_agent = False
+                
+                # Auto-refresh with countdown
+                refresh_interval = 3
+                placeholder = st.empty()
+                for i in range(refresh_interval, 0, -1):
+                    placeholder.text(f"🔄 Refreshing in {i} seconds...")
+                    time.sleep(1)
+                placeholder.empty()
+                st.rerun()
+            
+            # Show last activity
+            if st.session_state.chat_history:
+                last_msg = st.session_state.chat_history[-1]
+                st.markdown(f"**Last activity:** {last_msg['speaker']} at {last_msg['time']}")
+            
+            # Chat statistics
+            st.markdown("### 📈 Chat Statistics")
+            if st.session_state.chat_history:
+                customer_msgs = len([msg for msg in st.session_state.chat_history if msg['speaker'] == 'Customer'])
+                agent_msgs = len([msg for msg in st.session_state.chat_history if msg['speaker'] == 'Agent'])
+                
+                col_stats1, col_stats2 = st.columns(2)
+                with col_stats1:
+                    st.metric("👤 Customer", customer_msgs)
+                with col_stats2:
+                    st.metric("👨‍💼 Agent", agent_msgs)
+                
+                # Response time simulation
+                avg_response_time = random.randint(15, 45)
+                st.metric("⏱️ Avg Response Time", f"{avg_response_time}s")
+        
+        # AI Suggestions Panel
+        st.markdown("---")
+        st.subheader("🤖 AI Live Suggestions & Voice Analytics")
+        
+        suggestions_col1, suggestions_col2 = st.columns([2, 1])
+        
+        with suggestions_col1:
+            st.markdown("**Real-time Agent Assistance:**")
+            
+            # Create suggestions HTML container
+            suggestions_html = """
+            <div class="suggestion-container">
+            """
+            
+            for suggestion in reversed(st.session_state.suggestions_history[-5:]):  # Show last 5 suggestions
+                suggestions_html += f"""
+                <div class="suggestion-box">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                        <strong>🕐 {suggestion['time']}</strong>
+                        <span style="color: #28a745; font-weight: bold;">Confidence: {suggestion['confidence']}%</span>
+                    </div>
+                    <div style="color: #2ca02c;">💡 {suggestion['suggestion']}</div>
+                </div>
+                """
+            
+            if not st.session_state.suggestions_history:
+                suggestions_html += """
+                <div style="text-align: center; color: #6c757d; padding: 20px;">
+                    <em>No suggestions yet. Start the conversation to see AI recommendations!</em>
+                </div>
+                """
+            
+            suggestions_html += """
+            </div>
+            """
+            
+            st.markdown(suggestions_html, unsafe_allow_html=True)
+        
+        with suggestions_col2:
+            st.markdown("**Voice & Quick Actions:**")
+            
+            # Voice Test Buttons
+            st.markdown("**🎤 Voice Testing:**")
+            col_test1, col_test2 = st.columns(2)
+            
+            with col_test1:
+                if st.button("Test Customer Voice", use_container_width=True):
+                    test_text = "Hello, this is a test of the customer voice."
+                    with st.spinner("🔊 Testing customer voice..."):
+                        if st.session_state.tts_mode == "offline":
+                            tts_manager.speak_offline(test_text, "customer")
+                        else:
+                            tts_manager.speak_edge_tts(test_text, "customer", use_alt_voice if 'use_alt_voice' in locals() else False)
+            
+            with col_test2:
+                if st.button("Test Agent Voice", use_container_width=True):
+                    test_text = "Hello, this is a test of the agent voice."
+                    with st.spinner("🔊 Testing agent voice..."):
+                        if st.session_state.tts_mode == "offline":
+                            tts_manager.speak_offline(test_text, "agent")
+                        else:
+                            tts_manager.speak_edge_tts(test_text, "agent", use_alt_voice if 'use_alt_voice' in locals() else False)
     
     else:
         # Call Setup Information
