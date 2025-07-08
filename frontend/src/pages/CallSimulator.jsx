@@ -79,30 +79,30 @@ const CallSimulator = () => {
   const getInsightColor = (type) => {
     switch (type) {
       case 'intent':
-        return 'text-blue-500 dark:text-blue-400';
+        return 'text-blue-500';
       case 'entity':
-        return 'text-purple-500 dark:text-purple-400';
+        return 'text-purple-500';
       case 'sentiment':
-        return 'text-green-500 dark:text-green-400';
+        return 'text-green-500';
       case 'resolution':
-        return 'text-yellow-500 dark:text-yellow-400';
+        return 'text-yellow-500';
       case 'summary':
-        return 'text-orange-500 dark:text-orange-400';
+        return 'text-orange-500';
       case 'action':
-        return 'text-pink-500 dark:text-pink-400';
+        return 'text-pink-500';
       default:
-        return 'text-gray-500 dark:text-gray-400';
+        return 'text-gray-500';
     }
   };
 
   const getSentimentColor = () => {
     switch (sentiment) {
       case 'positive':
-        return 'text-green-500 dark:text-green-400';
+        return 'text-green-500';
       case 'negative':
-        return 'text-red-500 dark:text-red-400';
+        return 'text-red-500';
       default:
-        return 'text-gray-500 dark:text-gray-400';
+        return 'text-gray-500';
     }
   };
 
@@ -118,7 +118,7 @@ const CallSimulator = () => {
 
         <div className="grid gap-6 md:grid-cols-[2fr,1fr]">
           <div className="flex flex-col gap-6">
-            <Card className="border shadow-sm dark:border-gray-800">
+            <Card className="border shadow-sm">
               <CardHeader>
                 <CardTitle>Simulation Controls</CardTitle>
                 <CardDescription>Select a scenario and manage your call</CardDescription>
@@ -128,7 +128,7 @@ const CallSimulator = () => {
                   <select
                     value={selectedScenario}
                     onChange={(e) => setSelectedScenario(e.target.value)}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 sm:w-[200px]"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-[200px]"
                   >
                     {scenarios.map(scenario => (
                       <option key={scenario.id} value={scenario.id}>
@@ -139,12 +139,12 @@ const CallSimulator = () => {
                   <Button
                     onClick={isCallActive ? endCall : startCall}
                     variant={isCallActive ? "destructive" : "default"}
-                    className="dark:bg-blue-600 dark:hover:bg-blue-700 dark:text-white"
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
                   >
                     {isCallActive ? "End Call" : "Start Call"}
                   </Button>
                   {isCallActive && (
-                    <span className="text-sm text-muted-foreground dark:text-gray-400">
+                    <span className="text-sm text-muted-foreground">
                       Duration: {formatTime(callDuration)}
                     </span>
                   )}
@@ -152,13 +152,13 @@ const CallSimulator = () => {
               </CardContent>
             </Card>
 
-            <Card className="border shadow-sm dark:border-gray-800">
+            <Card className="border shadow-sm">
               <CardHeader>
                 <CardTitle>Live Transcription</CardTitle>
                 <CardDescription>Real-time conversation transcript</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="min-h-[400px] p-4 rounded-md bg-muted whitespace-pre-line dark:bg-gray-800 dark:text-gray-100 border dark:border-gray-700 overflow-y-auto">
+                <div className="min-h-[400px] p-4 rounded-md bg-muted whitespace-pre-line border border-gray-200 overflow-y-auto">
                   {transcript || "Transcription will appear here..."}
                 </div>
               </CardContent>
@@ -166,7 +166,7 @@ const CallSimulator = () => {
           </div>
 
           <div className="flex flex-col gap-6">
-            <Card className="border shadow-sm dark:border-gray-800">
+            <Card className="border shadow-sm">
               <CardHeader>
                 <CardTitle>Real-time Insights</CardTitle>
                 <CardDescription>AI-powered call analysis</CardDescription>
@@ -174,15 +174,15 @@ const CallSimulator = () => {
               <CardContent>
                 <div className="space-y-4">
                   {insights.map((insight, index) => (
-                    <div key={index} className="flex items-start gap-2 p-3 rounded-md bg-muted/50 dark:bg-gray-800/50">
+                    <div key={index} className="flex items-start gap-2 p-3 rounded-md bg-muted/50">
                       <span className={`font-medium ${getInsightColor(insight.type)}`}>
                         {insight.type.charAt(0).toUpperCase() + insight.type.slice(1)}:
                       </span>
-                      <span className="dark:text-gray-300">{insight.text}</span>
+                      <span className="text-gray-700">{insight.text}</span>
                     </div>
                   ))}
                   {insights.length === 0 && (
-                    <p className="text-sm text-muted-foreground text-center dark:text-gray-400">
+                    <p className="text-sm text-muted-foreground text-center">
                       Insights will appear during the call
                     </p>
                   )}
@@ -190,15 +190,15 @@ const CallSimulator = () => {
               </CardContent>
             </Card>
 
-            <Card className="border shadow-sm dark:border-gray-800">
+            <Card className="border shadow-sm">
               <CardHeader>
                 <CardTitle>Call Analytics</CardTitle>
                 <CardDescription>Performance metrics</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-6">
-                  <div className="p-4 rounded-md bg-muted/50 dark:bg-gray-800/50">
-                    <span className="text-sm font-medium dark:text-gray-300">Sentiment:</span>
+                  <div className="p-4 rounded-md bg-muted/50">
+                    <span className="text-sm font-medium">Sentiment:</span>
                     <span className={`ml-2 capitalize ${getSentimentColor()}`}>
                       {sentiment}
                     </span>
@@ -207,14 +207,14 @@ const CallSimulator = () => {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <div className="flex justify-between">
-                        <span className="text-sm font-medium dark:text-gray-300">Customer Satisfaction</span>
-                        <span className="text-sm text-muted-foreground dark:text-gray-400">
+                        <span className="text-sm font-medium">Customer Satisfaction</span>
+                        <span className="text-sm text-muted-foreground">
                           {sentiment === 'positive' ? '80%' : sentiment === 'neutral' ? '50%' : '30%'}
                         </span>
                       </div>
-                      <div className="h-2 rounded-full bg-muted dark:bg-gray-700">
+                      <div className="h-2 rounded-full bg-muted">
                         <div
-                          className="h-full rounded-full bg-green-500 dark:bg-green-600 transition-all duration-500"
+                          className="h-full rounded-full bg-green-500 transition-all duration-500"
                           style={{ width: `${sentiment === 'positive' ? 80 : sentiment === 'neutral' ? 50 : 30}%` }}
                         />
                       </div>
@@ -222,12 +222,12 @@ const CallSimulator = () => {
 
                     <div className="space-y-2">
                       <div className="flex justify-between">
-                        <span className="text-sm font-medium dark:text-gray-300">Agent Performance</span>
-                        <span className="text-sm text-muted-foreground dark:text-gray-400">75%</span>
+                        <span className="text-sm font-medium">Agent Performance</span>
+                        <span className="text-sm text-muted-foreground">75%</span>
                       </div>
-                      <div className="h-2 rounded-full bg-muted dark:bg-gray-700">
+                      <div className="h-2 rounded-full bg-muted">
                         <div
-                          className="h-full rounded-full bg-blue-500 dark:bg-blue-600 transition-all duration-500"
+                          className="h-full rounded-full bg-blue-500 transition-all duration-500"
                           style={{ width: '75%' }}
                         />
                       </div>

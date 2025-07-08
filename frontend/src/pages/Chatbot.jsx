@@ -41,48 +41,62 @@ export default function Chatbot() {
   };
 
   return (
-    <div className="container mx-auto py-8">
-      <Card className="max-w-4xl mx-auto">
-        <CardHeader>
-          <CardTitle>AI Chatbot</CardTitle>
-          <CardDescription>Chat with our AI assistant about call-related insights and questions.</CardDescription>
+    <div className="container mx-auto py-0 px-0 sm:py-8 sm:px-0 flex flex-col items-center min-h-[100dvh] bg-gradient-to-b via-white ">
+      <Card className="max-w-2xl w-full flex flex-col h-[90dvh] sm:h-[80dvh] shadow-2xl border-0 sm:rounded-2xl rounded-none overflow-hidden bg-white">
+        <CardHeader className="bg-white border-b border-border px-4 py-3">
+          <CardTitle className="text-xl sm:text-2xl font-bold">AI Chatbot</CardTitle>
+          <CardDescription className="text-base sm:text-lg">Chat with our AI assistant about call-related insights and questions.</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="h-[500px] overflow-y-auto space-y-4 p-4 rounded-lg border bg-muted/50">
+        <CardContent className="flex-1 flex flex-col justify-end p-0">
+          <div className="flex-1 overflow-y-auto px-2 sm:px-6 py-4 bg-gradient-to-b from-white/80 to-blue-50 space-y-3" style={{scrollbarWidth: 'thin'}}>
             {messages.map((message, index) => (
               <div
                 key={index}
                 className={cn(
-                  "flex gap-3 p-4 rounded-lg",
+                  "flex items-end gap-2 sm:gap-3 group",
                   message.role === 'user' 
-                    ? "ml-auto max-w-[80%] bg-primary text-primary-foreground" 
-                    : "mr-auto max-w-[80%] bg-secondary text-secondary-foreground"
+                    ? "justify-end" 
+                    : "justify-start"
                 )}
               >
-                <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-background text-foreground">
-                  {message.role === 'user' ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
+                {message.role === 'assistant' && (
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-100 text-blue-600 shadow-md border border-blue-200">
+                    <Bot className="h-5 w-5" />
+                  </div>
+                )}
+                <div
+                  className={cn(
+                    "px-4 py-2 rounded-2xl shadow-md max-w-[85vw] sm:max-w-[70%] text-base transition-all duration-300 animate-fadeIn",
+                    message.role === 'user'
+                      ? "bg-blue-600 text-white rounded-br-md"
+                      : "bg-white text-blue-900 border border-blue-100 rounded-bl-md"
+                  )}
+                >
+                  {message.content}
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm">{message.content}</p>
-                </div>
+                {message.role === 'user' && (
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-600 text-white shadow-md border border-blue-300">
+                    <User className="h-5 w-5" />
+                  </div>
+                )}
               </div>
             ))}
             <div ref={messagesEndRef} />
           </div>
-
-          <form onSubmit={handleSubmit} className="flex gap-2">
+          {/* Sticky input bar */}
+          <form onSubmit={handleSubmit} className="sticky bottom-0 left-0 w-full bg-white/90 backdrop-blur border-t border-border flex gap-2 px-2 sm:px-6 py-3 z-10">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Type your message..."
-              className="min-h-[50px] flex-1 bg-muted/50"
+              className="min-h-[44px] flex-1 bg-muted/50 text-base resize-none rounded-xl border border-blue-200 focus:border-blue-400 focus:ring-blue-200 shadow-sm"
             />
             <Button 
               type="submit" 
               disabled={isLoading || !input.trim()}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              className="bg-blue-600 text-white hover:bg-blue-700 w-14 h-12 rounded-xl flex items-center justify-center text-base shadow-lg"
             >
-              <Send className="h-4 w-4" />
+              <Send className="h-6 w-6" />
               <span className="sr-only">Send message</span>
             </Button>
           </form>
