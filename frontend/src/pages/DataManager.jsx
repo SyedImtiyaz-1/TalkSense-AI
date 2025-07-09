@@ -1,6 +1,7 @@
 import React from 'react';
 import { Upload, File, AlertCircle, Trash2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { createApiUrl } from '@/lib/api';
 
 export default function DataManager() {
   const [files, setFiles] = React.useState([]);

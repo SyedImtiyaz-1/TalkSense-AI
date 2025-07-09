@@ -1,4 +1,5 @@
 import React from 'react';
+import { getWsBaseUrl } from '@/lib/api';
 import { Mic, Square, Play, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
@@ -32,7 +33,8 @@ export default function VoiceTranscriber() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             
             // Connect to WebSocket endpoint
-            const websocketUrl = "ws://localhost:8000/ws/transcribe"
+            const wsBaseUrl = getWsBaseUrl();
+            const websocketUrl = `${wsBaseUrl}/ws/transcribe`;
             wsRef.current = new WebSocket(websocketUrl);
             
             wsRef.current.onopen = () => {

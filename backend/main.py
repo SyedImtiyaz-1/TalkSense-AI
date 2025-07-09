@@ -20,7 +20,9 @@ from botocore.credentials import Credentials
 import aiohttp
 import logging
 
-load_dotenv()
+# Load environment variables from both backend and root directories
+load_dotenv()  # Load from current directory (backend/)
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))  # Load from root directory
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -29,9 +31,18 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 # Configure CORS
+FRONTEND_HOST = os.getenv('FRONTEND_HOST', 'http://localhost:5173')
+allowed_origins = [
+    FRONTEND_HOST,
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -224,6 +235,31 @@ async def delete_file(file_id: str):
 async def get_analysis():
     try:
         print(f"Fetching files from bucket: {BUCKET_NAME}, prefix: {KNOWLEDGE_BASE_PREFIX}")  # Debug log
+        print(f"AWS Region: {os.getenv('AWS_DEFAULT_REGION')}")  # Debug log
+        print(f"AWS Access Key ID: {os.getenv('AWS_ACCESS_KEY_ID')[:10]}..." if os.getenv('AWS_ACCESS_KEY_ID') else "No AWS_ACCESS_KEY_ID")  # Debug log
+        
+        # First, let's try to list all buckets to verify connectivity
+        try:
+            buckets_response = s3_client.list_buckets()
+            print(f"Available buckets: {[bucket['Name'] for bucket in buckets_response['Buckets']]}")
+        except Exception as bucket_error:
+            print(f"Error listing buckets: {bucket_error}")
+            raise HTTPException(status_code=500, detail=f"AWS S3 connection error: {str(bucket_error)}")
+        
+        # Check if our specific bucket exists
+        try:
+            s3_client.head_bucket(Bucket=BUCKET_NAME)
+            print(f"Bucket '{BUCKET_NAME}' exists and is accessible")
+        except ClientError as bucket_error:
+            error_code = bucket_error.response['Error']['Code']
+            if error_code == '404':
+                available_buckets = [bucket['Name'] for bucket in s3_client.list_buckets()['Buckets']]
+                raise HTTPException(status_code=500, detail=f"Bucket '{BUCKET_NAME}' does not exist. Available buckets: {available_buckets}")
+            elif error_code == '403':
+                raise HTTPException(status_code=500, detail=f"Access denied to bucket '{BUCKET_NAME}'. Check your AWS permissions.")
+            else:
+                raise HTTPException(status_code=500, detail=f"Error accessing bucket '{BUCKET_NAME}': {str(bucket_error)}")
+        
         # Get all objects in the knowledge_base folder
         response = s3_client.list_objects_v2(
             Bucket=BUCKET_NAME,
@@ -268,9 +304,17 @@ async def get_analysis():
         print("Analysis Data:", analysis_data)  # Debug log
         return analysis_data
         
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        error_message = e.response['Error']['Message']
+        print(f"AWS ClientError: {error_code} - {error_message}")
+        raise HTTPException(status_code=500, detail=f"AWS S3 Error ({error_code}): {error_message}")
     except Exception as e:
-        print(f"Error fetching analysis: {str(e)}")  # Debug log
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Unexpected error fetching analysis: {str(e)}")  # Debug log
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 # WebSocket endpoint for real-time transcription
 @app.websocket("/ws/transcribe")
@@ -348,6 +392,42 @@ class TranscriptResultStreamHandler:
     async def process_events(self):
         await self.loop.run_in_executor(None, self._process_events_sync)
 
+@app.get("/api/debug/aws")
+async def debug_aws():
+    """Debug endpoint to test AWS S3 connectivity"""
+    try:
+        # Test basic AWS connectivity
+        response = s3_client.list_buckets()
+        
+        debug_info = {
+            "aws_region": os.getenv('AWS_DEFAULT_REGION'),
+            "configured_bucket": BUCKET_NAME,
+            "available_buckets": [bucket['Name'] for bucket in response['Buckets']],
+            "bucket_exists": BUCKET_NAME in [bucket['Name'] for bucket in response['Buckets']],
+            "aws_access_key_id": os.getenv('AWS_ACCESS_KEY_ID')[:10] + "..." if os.getenv('AWS_ACCESS_KEY_ID') else "Not set"
+        }
+        
+        # If bucket exists, try to access it
+        if debug_info["bucket_exists"]:
+            try:
+                s3_client.head_bucket(Bucket=BUCKET_NAME)
+                debug_info["bucket_accessible"] = True
+                
+                # Try to list objects
+                objects_response = s3_client.list_objects_v2(Bucket=BUCKET_NAME, MaxKeys=5)
+                debug_info["sample_objects"] = [obj['Key'] for obj in objects_response.get('Contents', [])]
+                
+            except ClientError as e:
+                debug_info["bucket_accessible"] = False
+                debug_info["bucket_error"] = str(e)
+        
+        return debug_info
+        
+    except Exception as e:
+        return {"error": str(e), "aws_credentials_set": bool(os.getenv('AWS_ACCESS_KEY_ID'))}
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000) 
+    port = int(os.getenv('PORT', 8000))
+    host = os.getenv('HOST', '0.0.0.0')
+    uvicorn.run(app, host=host, port=port)

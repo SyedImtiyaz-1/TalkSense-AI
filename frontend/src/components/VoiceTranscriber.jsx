@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { getWsBaseUrl } from '@/lib/api';
 
 const VoiceTranscriber = () => {
   const [isRecording, setIsRecording] = useState(false);
@@ -33,7 +34,8 @@ const VoiceTranscriber = () => {
       streamRef.current = stream;
 
       // Initialize WebSocket
-      websocketRef.current = new WebSocket('ws://localhost:8000/ws/transcribe');
+      const wsBaseUrl = getWsBaseUrl();
+      websocketRef.current = new WebSocket(`${wsBaseUrl}/ws/transcribe`);
       
       websocketRef.current.onmessage = (event) => {
         const data = JSON.parse(event.data);
