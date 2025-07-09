@@ -1,7 +1,7 @@
 import os
 import asyncio
 import requests
-from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket
+from fastapi import FastAPI, File, UploadFile, HTTPException, WebSocket, Body
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, Any, List
 import boto3
@@ -19,6 +19,9 @@ from botocore.awsrequest import AWSRequest
 from botocore.credentials import Credentials
 import aiohttp
 import logging
+import traceback
+import io
+from PyPDF2 import PdfReader
 
 # Load environment variables from both backend and root directories
 load_dotenv()  # Load from current directory (backend/)
@@ -49,12 +52,22 @@ app.add_middleware(
 )
 
 # Configure AWS
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-    region_name=os.getenv('AWS_DEFAULT_REGION')
+AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
+AWS_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+
+# Configure logging for AWS clients
+boto3.set_stream_logger('botocore', logging.DEBUG)
+
+# Configure AWS clients with explicit credentials
+session = boto3.Session(
+    aws_access_key_id=AWS_ACCESS_KEY,
+    aws_secret_access_key=AWS_SECRET_KEY,
+    region_name=AWS_REGION
 )
+
+# S3 client
+s3_client = session.client('s3')
 
 # Configure Amazon Transcribe
 transcribe_client = boto3.client(
@@ -67,6 +80,36 @@ transcribe_client = boto3.client(
 BUCKET_NAME = os.getenv('S3_BUCKET_NAME', 'live-call-insight-db')
 KNOWLEDGE_BASE_PREFIX = "knowledge-base/"
 RECORDINGS_PREFIX = "recordings/"
+
+# Bedrock config
+BEDROCK_MODEL_ID = os.getenv('BEDROCK_MODEL_ID')
+BEDROCK_EMBEDDING_MODEL_ID = os.getenv('BEDROCK_EMBEDDING_MODEL_ID')
+BEDROCK_KNOWLEDGE_BASE_ID = os.getenv('BEDROCK_KNOWLEDGE_BASE_ID')
+
+# Bedrock client with explicit configuration
+bedrock_runtime = session.client(
+    service_name='bedrock-runtime',
+    region_name=AWS_REGION,
+    aws_access_key_id=AWS_ACCESS_KEY,
+    aws_secret_access_key=AWS_SECRET_KEY,
+)
+
+def extract_text_from_pdf(pdf_content):
+    """Extract text from PDF content"""
+    try:
+        # Create a PDF reader object
+        pdf_file = io.BytesIO(pdf_content)
+        pdf_reader = PdfReader(pdf_file)
+        
+        # Extract text from all pages
+        text = []
+        for page in pdf_reader.pages:
+            text.append(page.extract_text())
+        
+        return "\n".join(text)
+    except Exception as e:
+        logger.error(f"Error extracting text from PDF: {str(e)}")
+        return ""
 
 @app.get("/")
 async def root():
@@ -392,6 +435,144 @@ class TranscriptResultStreamHandler:
     async def process_events(self):
         await self.loop.run_in_executor(None, self._process_events_sync)
 
+@app.post("/api/chat")
+async def chat_with_knowledge_base(payload: dict = Body(...)):
+    """
+    Chat endpoint that uses Amazon Titan with context from S3 knowledge base.
+    Expects: { "message": "..." }
+    Returns: { "response": "..." }
+    """
+    try:
+        # Log environment setup
+        logger.info("=== AWS Configuration ===")
+        logger.info(f"Region: {AWS_REGION}")
+        logger.info(f"Model ID: {BEDROCK_MODEL_ID}")
+        
+        # Validate AWS configuration
+        if not AWS_ACCESS_KEY or not AWS_SECRET_KEY:
+            raise HTTPException(status_code=500, detail="AWS credentials not configured")
+        
+        # Get user message
+        user_message = payload.get("message")
+        if not user_message:
+            raise HTTPException(status_code=400, detail="Missing 'message' in request body")
+
+        # Get relevant documents from S3 knowledge base
+        try:
+            # List objects in the knowledge base folder
+            response = s3_client.list_objects_v2(
+                Bucket=BUCKET_NAME,
+                Prefix=KNOWLEDGE_BASE_PREFIX
+            )
+            
+            context_docs = []
+            if 'Contents' in response:
+                for obj in response['Contents']:
+                    if obj['Key'] == KNOWLEDGE_BASE_PREFIX:  # Skip the folder itself
+                        continue
+                    
+                    # Get the document content
+                    doc_response = s3_client.get_object(
+                        Bucket=BUCKET_NAME,
+                        Key=obj['Key']
+                    )
+                    doc_content = doc_response['Body'].read()
+                    
+                    # Handle different file types
+                    if obj['Key'].lower().endswith('.pdf'):
+                        doc_text = extract_text_from_pdf(doc_content)
+                    else:
+                        # Try to decode as text
+                        try:
+                            doc_text = doc_content.decode('utf-8')
+                        except UnicodeDecodeError:
+                            logger.warning(f"Could not decode file as text: {obj['Key']}")
+                            continue
+                    
+                    if doc_text.strip():
+                        context_docs.append(doc_text)
+            
+            # Combine context documents
+            context = "\n\n".join(context_docs)
+            
+            if not context.strip():
+                return {"response": "I apologize, but I couldn't find any readable documents in the knowledge base to help answer your question."}
+            
+            # Prepare prompt with context
+            prompt = f"""You are a helpful AI assistant. Use the following context to answer the question. 
+            If you cannot find the answer in the context, say so.
+
+            Context:
+            {context}
+
+            Question: {user_message}
+
+            Answer:"""
+
+            # Prepare Bedrock request
+            request_payload = {
+                "inputText": prompt,
+                "textGenerationConfig": {
+                    "maxTokenCount": 512,
+                    "temperature": 0.7,
+                    "topP": 0.9,
+                    "stopSequences": []
+                }
+            }
+
+            logger.info("Sending request to Bedrock with context")
+
+            response = bedrock_runtime.invoke_model(
+                modelId=BEDROCK_MODEL_ID,
+                body=json.dumps(request_payload),
+                accept='application/json',
+                contentType='application/json'
+            )
+            
+            # Parse the response
+            response_body = json.loads(response.get('body').read())
+            logger.info("Raw Bedrock Response:")
+            logger.info(json.dumps(response_body, indent=2))
+            
+            # Extract the response
+            if 'results' in response_body and len(response_body['results']) > 0:
+                answer = response_body['results'][0].get('outputText', '')
+            else:
+                answer = "I apologize, but I couldn't generate a proper response at the moment."
+            
+            return {"response": answer}
+            
+        except ClientError as e:
+            error_code = e.response['Error'].get('Code', 'Unknown')
+            error_message = e.response['Error'].get('Message', str(e))
+            logger.error(f"AWS Error ({error_code}): {error_message}")
+            logger.error(f"Full error: {str(e)}")
+            
+            if error_code == 'NoSuchKey':
+                raise HTTPException(
+                    status_code=404,
+                    detail="Could not find the requested document in the knowledge base."
+                )
+            elif error_code == 'AccessDenied':
+                raise HTTPException(
+                    status_code=403,
+                    detail="Access denied to S3 bucket. Please check your AWS credentials and permissions."
+                )
+            else:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"AWS error: {error_message}"
+                )
+            
+    except Exception as e:
+        logger.error(f"Unexpected error in chat endpoint: {str(e)}")
+        logger.error(f"Error type: {type(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred. Please check the server logs for more details."
+        )
+
 @app.get("/api/debug/aws")
 async def debug_aws():
     """Debug endpoint to test AWS S3 connectivity"""
@@ -425,6 +606,75 @@ async def debug_aws():
         
     except Exception as e:
         return {"error": str(e), "aws_credentials_set": bool(os.getenv('AWS_ACCESS_KEY_ID'))}
+
+@app.get("/api/debug/config")
+async def debug_config():
+    """Debug endpoint to check AWS configuration"""
+    return {
+        "aws_region": AWS_REGION,
+        "aws_access_key_present": bool(AWS_ACCESS_KEY),
+        "aws_secret_key_present": bool(AWS_SECRET_KEY),
+        "bedrock_model_id": BEDROCK_MODEL_ID,
+        "knowledge_base_id": BEDROCK_KNOWLEDGE_BASE_ID,
+        "s3_bucket": BUCKET_NAME
+    }
+
+@app.get("/api/knowledge-base")
+async def list_knowledge_base():
+    """List all documents in the knowledge base"""
+    try:
+        response = s3_client.list_objects_v2(
+            Bucket=BUCKET_NAME,
+            Prefix=KNOWLEDGE_BASE_PREFIX
+        )
+        
+        documents = []
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                if obj['Key'] == KNOWLEDGE_BASE_PREFIX:  # Skip the folder itself
+                    continue
+                
+                # Generate a pre-signed URL for viewing/downloading
+                url = s3_client.generate_presigned_url(
+                    'get_object',
+                    Params={'Bucket': BUCKET_NAME, 'Key': obj['Key']},
+                    ExpiresIn=3600  # URL valid for 1 hour
+                )
+                
+                documents.append({
+                    'id': os.path.basename(obj['Key']),
+                    'name': os.path.basename(obj['Key']),
+                    'size': obj['Size'],
+                    'lastModified': obj['LastModified'].isoformat(),
+                    'url': url
+                })
+        
+        return {
+            "total": len(documents),
+            "documents": documents
+        }
+        
+    except ClientError as e:
+        error_code = e.response['Error'].get('Code', 'Unknown')
+        error_message = e.response['Error'].get('Message', str(e))
+        logger.error(f"AWS Error ({error_code}): {error_message}")
+        
+        if error_code == 'AccessDenied':
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied to S3 bucket. Please check your AWS credentials and permissions."
+            )
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"AWS error: {error_message}"
+            )
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An unexpected error occurred while listing knowledge base documents."
+        )
 
 if __name__ == "__main__":
     import uvicorn

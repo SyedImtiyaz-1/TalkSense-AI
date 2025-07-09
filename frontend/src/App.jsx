@@ -6,6 +6,7 @@ import Chatbot from './pages/Chatbot';
 import VoiceTranscriber from './pages/VoiceTranscriber';
 import CallSimulator from './pages/CallSimulator';
 import DataManager from './pages/DataManager';
+import { Toaster } from 'sonner';
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
           <Route path="/data-manager" element={<DataManager />} />
         </Routes>
       </Layout>
+      <Toaster richColors position="top-center" />
     </Router>
   );
 }
