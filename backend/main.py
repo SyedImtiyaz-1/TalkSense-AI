@@ -473,7 +473,7 @@ async def websocket_transcribe(websocket: WebSocket):
                     forward_audio(),
                     receive_transcription()
                 )
-                
+
     except Exception as e:
         error_msg = f"Transcription error: {str(e)}"
         logger.error(error_msg)
@@ -494,7 +494,7 @@ async def websocket_transcribe(websocket: WebSocket):
                 logger.info(f"Saved conversation {conversation_id} to DynamoDB")
         except Exception as e:
             logger.error(f"Error saving to DynamoDB: {str(e)}")
-            
+
         # Cleanup
         await websocket.close()
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { getWsBaseUrl } from '@/lib/api';
 import { Mic, Square, Play, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import SideChatbot from '@/components/SideChatbot';
 
 // Helper to format time
 const formatTime = (seconds) => {
@@ -21,6 +22,18 @@ export default function VoiceTranscriber() {
     const wsRef = React.useRef(null);
   const mediaRecorderRef = React.useRef(null);
     const timerRef = React.useRef(null);
+
+  // Update call context when transcription changes
+  React.useEffect(() => {
+    const context = {
+      isRecording,
+      elapsedTime,
+      transcription: transcription.join(' '),
+      interimTranscription
+    };
+    // Make context available globally for the SideChatbot
+    window.callContext = context;
+  }, [isRecording, elapsedTime, transcription, interimTranscription]);
 
   const startRecording = async () => {
     try {
@@ -121,7 +134,7 @@ export default function VoiceTranscriber() {
           </p>
         </div>
 
-        <div className="grid gap-8 md:grid-cols-2">
+        <div className="grid gap-8 md:grid-cols-[1fr,1fr,300px]">
           {/* Recording Section */}
           <div className="space-y-4">
             <div className="border border-border rounded-lg p-6">
@@ -189,6 +202,13 @@ export default function VoiceTranscriber() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+
+          {/* AI Chatbot - Always visible */}
+          <div className="space-y-4">
+            <div className="sticky top-4">
+              <SideChatbot />
             </div>
           </div>
         </div>
