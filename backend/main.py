@@ -69,6 +69,10 @@ session = boto3.Session(
 # S3 client
 s3_client = session.client('s3')
 
+# DynamoDB client
+dynamodb = session.resource('dynamodb')
+conversation_table = dynamodb.Table('CallConversations')
+
 # Configure Amazon Transcribe
 transcribe_client = boto3.client(
     'transcribe',
@@ -363,77 +367,136 @@ async def get_analysis():
 @app.websocket("/ws/transcribe")
 async def websocket_transcribe(websocket: WebSocket):
     await websocket.accept()
+    logger.info("WebSocket connection accepted")
     
-    transcribe_client = boto3.client(
-        'transcribe-streaming',
-        region_name=os.getenv('AWS_DEFAULT_REGION', 'us-east-1'),
-        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
-    )
+    # Create unique conversation ID
+    conversation_id = str(uuid.uuid4())
+    conversation_data = {
+        "id": conversation_id,
+        "timestamp": datetime.now().isoformat(),
+        "transcript": []
+    }
 
     try:
-        response = transcribe_client.start_stream_transcription(
-            LanguageCode='en-US',
-            MediaSampleRateHertz=44100,
-            MediaEncoding='pcm'
-        )
-
-        handler = TranscriptResultStreamHandler(websocket, response['TranscriptResultStream'])
+        # Create a presigned URL for the transcribe streaming API
+        aws_session = session  # Use the global boto3 session
+        transcribe_client = aws_session.client('transcribe')
         
-        sender_task = asyncio.create_task(audio_sender(websocket, handler))
-        receiver_task = asyncio.create_task(handler.process_events())
-
-        done, pending = await asyncio.wait(
-            {sender_task, receiver_task},
-            return_when=asyncio.FIRST_COMPLETED,
+        # Get credentials for SigV4 signing
+        credentials = aws_session.get_credentials()
+        creds = credentials.get_frozen_credentials()
+        
+        # Create a request for the websocket URL
+        request = AWSRequest(
+            method='GET',
+            url=f'wss://transcribestreaming.{AWS_REGION}.amazonaws.com:8443/stream-transcription-websocket',
+            params={
+                'language-code': 'en-US',
+                'media-encoding': 'pcm',
+                'sample-rate': '44100'
+            }
         )
         
-        for task in pending:
-            task.cancel()
-
+        # Sign the request with SigV4
+        auth = SigV4Auth(creds, 'transcribe', AWS_REGION)
+        auth.add_auth(request)
+        
+        # Get the presigned URL
+        presigned_url = request.url
+        
+        logger.info(f"Created presigned URL for Transcribe streaming")
+        
+        # Create a connection to AWS Transcribe streaming service
+        async with aiohttp.ClientSession() as http_session:  # Renamed to http_session
+            async with http_session.ws_connect(presigned_url) as aws_ws:
+                logger.info("Connected to AWS Transcribe streaming service")
+                
+                # Start two tasks: one for receiving audio from client and sending to AWS,
+                # and another for receiving transcription from AWS and sending to client
+                
+                # Task 1: Receive audio from client and send to AWS
+                async def forward_audio():
+                    try:
+                        while True:
+                            # Process audio data
+                            audio_data = await websocket.receive_bytes()
+                            
+                            # Create the event message for AWS Transcribe
+                            message = {
+                                "audio_event": {
+                                    "audio_chunk": base64.b64encode(audio_data).decode('utf-8')
+                                }
+                            }
+                            
+                            await aws_ws.send_json(message)
+                    except Exception as e:
+                        logger.error(f"Error in forward_audio: {str(e)}")
+                        logger.error(traceback.format_exc())
+                
+                # Task 2: Receive transcription from AWS and send to client
+                async def receive_transcription():
+                    try:
+                        async for msg in aws_ws:
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                data = json.loads(msg.data)
+                                logger.debug(f"Received data from AWS: {data}")
+                                
+                                if 'Transcript' in data.get('TranscriptEvent', {}):
+                                    results = data['TranscriptEvent']['Transcript'].get('Results', [])
+                                    
+                                    for result in results:
+                                        if not result.get('IsPartial', True):
+                                            alternatives = result.get('Alternatives', [])
+                                            if alternatives:
+                                                transcript = alternatives[0].get('Transcript', '')
+                                                
+                                                if transcript.strip():
+                                                    # Send to client
+                                                    await websocket.send_json({
+                                                        "text": transcript,
+                                                        "is_final": True
+                                                    })
+                                                    
+                                                    # Save to conversation data
+                                                    conversation_data["transcript"].append({
+                                                        "text": transcript,
+                                                        "timestamp": datetime.now().isoformat()
+                                                    })
+                                                    
+                                                    logger.info(f"Sent transcript: {transcript}")
+                    except Exception as e:
+                        logger.error(f"Error in receive_transcription: {str(e)}")
+                        logger.error(traceback.format_exc())
+                
+                # Run both tasks concurrently
+                await asyncio.gather(
+                    forward_audio(),
+                    receive_transcription()
+                )
+                
     except Exception as e:
-        logger.error(f"Top-level error in websocket_transcribe: {e}")
-        await websocket.close(code=1011)
-
-async def audio_sender(websocket: WebSocket, handler: "TranscriptResultStreamHandler"):
-    try:
-        while True:
-            data = await websocket.receive_bytes()
-            handler.stream.write(data)
-    except websockets.exceptions.ConnectionClosed:
-        logger.info("Client disconnected.")
-    finally:
-        logger.info("Closing handler stream.")
-        handler.stream.close()
-
-class TranscriptResultStreamHandler:
-    def __init__(self, websocket: WebSocket, stream):
-        self.websocket = websocket
-        self._stream = stream
-        self.stream = self._stream.event_stream
-        self.loop = asyncio.get_running_loop()
-
-    def _process_events_sync(self):
+        error_msg = f"Transcription error: {str(e)}"
+        logger.error(error_msg)
+        logger.error(traceback.format_exc())
         try:
-            for event in self._stream:
-                if 'Transcript' in event:
-                    results = event['Transcript']['Results']
-                    if results and results[0]['Alternatives']:
-                        transcript = results[0]
-                        text = transcript['Alternatives'][0]['Transcript']
-                        is_final = not transcript['IsPartial']
-                        
-                        asyncio.run_coroutine_threadsafe(
-                            self.websocket.send_json({"text": text, "is_final": is_final}),
-                            self.loop
-                        )
+            await websocket.send_json({"error": error_msg})
+        except:
+            pass
+    finally:
+        # Save conversation to DynamoDB
+        try:
+            if conversation_data["transcript"]:
+                conversation_table.put_item(Item={
+                    "ConversationId": conversation_id,
+                    "Timestamp": conversation_data["timestamp"],
+                    "Transcript": conversation_data["transcript"]
+                })
+                logger.info(f"Saved conversation {conversation_id} to DynamoDB")
         except Exception as e:
-            logger.error(f"Error processing Transcribe events: {e}")
-            if self.websocket.client_state != websockets.protocol.State.CLOSED:
-                asyncio.run_coroutine_threadsafe(self.websocket.close(code=1011), self.loop)
-
-    async def process_events(self):
-        await self.loop.run_in_executor(None, self._process_events_sync)
+            logger.error(f"Error saving to DynamoDB: {str(e)}")
+            
+        # Cleanup
+        await websocket.close()
 
 @app.post("/api/chat")
 async def chat_with_knowledge_base(payload: dict = Body(...)):
