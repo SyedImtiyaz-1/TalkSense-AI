@@ -12,8 +12,8 @@ export function Navbar() {
 
   const navItems = [
     { path: '/', label: 'Dashboard' },
-    { path: '/chatbot', label: 'AI Chatbot' },
-    { path: '/voice-transcriber', label: 'Voice Transcriber' },
+    // { path: '/chatbot', label: 'AI Chatbot' },
+    // { path: '/voice-transcriber', label: 'Voice Transcriber' },
     { path: '/call-simulator', label: 'Call Simulator' },
     { path: '/data-manager', label: 'Data Manager' },
   ];

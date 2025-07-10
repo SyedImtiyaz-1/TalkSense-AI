@@ -39,14 +39,14 @@ const Dashboard = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Voice Transcriber</CardTitle>
+            <CardTitle>Data Manager</CardTitle>
             <CardDescription>
-              Convert voice recordings to text with advanced transcription.
+              Manage and analyze your training data for better AI performance.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Button asChild className="w-full">
-              <Link to="/voice-transcriber">Start Transcribing</Link>
+              <Link to="/data-manager">Train Data</Link>
             </Button>
           </CardContent>
         </Card>
