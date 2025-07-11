@@ -445,25 +445,40 @@ async def websocket_transcribe(websocket: WebSocket):
                                     results = data['TranscriptEvent']['Transcript'].get('Results', [])
                                     
                                     for result in results:
-                                        if not result.get('IsPartial', True):
-                                            alternatives = result.get('Alternatives', [])
-                                            if alternatives:
-                                                transcript = alternatives[0].get('Transcript', '')
-                                                
-                                                if transcript.strip():
-                                                    # Send to client
-                                                    await websocket.send_json({
+                                        alternatives = result.get('Alternatives', [])
+                                        if alternatives:
+                                            transcript = alternatives[0].get('Transcript', '')
+                                            is_final = not result.get('IsPartial', True)
+
+                                            if transcript.strip():
+                                                # Send transcript to client (both partial and final)
+                                                await websocket.send_json({
+                                                    "type": "transcript",
+                                                    "data": {
                                                         "text": transcript,
-                                                        "is_final": True
-                                                    })
-                                                    
+                                                        "is_final": is_final
+                                                    }
+                                                })
+                                                logger.info(f"Sent transcript (is_final={is_final}): {transcript}")
+
+                                                if is_final:
                                                     # Save to conversation data
                                                     conversation_data["transcript"].append({
                                                         "text": transcript,
                                                         "timestamp": datetime.now().isoformat()
                                                     })
                                                     
-                                                    logger.info(f"Sent transcript: {transcript}")
+                                                    # Get AI assistance
+                                                    assistance_text = await get_bedrock_assistance(transcript)
+                                                    
+                                                    # Send assistance to client
+                                                    await websocket.send_json({
+                                                        "type": "assistance",
+                                                        "data": {
+                                                            "suggestion": assistance_text
+                                                        }
+                                                    })
+                                                    logger.info(f"Sent assistance: {assistance_text}")
                     except Exception as e:
                         logger.error(f"Error in receive_transcription: {str(e)}")
                         logger.error(traceback.format_exc())
@@ -498,31 +513,13 @@ async def websocket_transcribe(websocket: WebSocket):
         # Cleanup
         await websocket.close()
 
-@app.post("/api/chat")
-async def chat_with_knowledge_base(payload: dict = Body(...)):
+async def get_bedrock_assistance(user_message: str) -> str:
     """
-    Chat endpoint that uses Amazon Titan with context from S3 knowledge base.
-    Expects: { "message": "..." }
-    Returns: { "response": "..." }
+    Queries the S3 knowledge base, invokes Bedrock, and returns assistance.
     """
     try:
-        # Log environment setup
-        logger.info("=== AWS Configuration ===")
-        logger.info(f"Region: {AWS_REGION}")
-        logger.info(f"Model ID: {BEDROCK_MODEL_ID}")
-        
-        # Validate AWS configuration
-        if not AWS_ACCESS_KEY or not AWS_SECRET_KEY:
-            raise HTTPException(status_code=500, detail="AWS credentials not configured")
-        
-        # Get user message
-        user_message = payload.get("message")
-        if not user_message:
-            raise HTTPException(status_code=400, detail="Missing 'message' in request body")
-
         # Get relevant documents from S3 knowledge base
-        try:
-            # List objects in the knowledge base folder
+        def get_s3_docs():
             response = s3_client.list_objects_v2(
                 Bucket=BUCKET_NAME,
                 Prefix=KNOWLEDGE_BASE_PREFIX
@@ -531,21 +528,18 @@ async def chat_with_knowledge_base(payload: dict = Body(...)):
             context_docs = []
             if 'Contents' in response:
                 for obj in response['Contents']:
-                    if obj['Key'] == KNOWLEDGE_BASE_PREFIX:  # Skip the folder itself
+                    if obj['Key'] == KNOWLEDGE_BASE_PREFIX:
                         continue
                     
-                    # Get the document content
                     doc_response = s3_client.get_object(
                         Bucket=BUCKET_NAME,
                         Key=obj['Key']
                     )
                     doc_content = doc_response['Body'].read()
                     
-                    # Handle different file types
                     if obj['Key'].lower().endswith('.pdf'):
                         doc_text = extract_text_from_pdf(doc_content)
                     else:
-                        # Try to decode as text
                         try:
                             doc_text = doc_content.decode('utf-8')
                         except UnicodeDecodeError:
@@ -554,78 +548,79 @@ async def chat_with_knowledge_base(payload: dict = Body(...)):
                     
                     if doc_text.strip():
                         context_docs.append(doc_text)
-            
-            # Combine context documents
-            context = "\n\n".join(context_docs)
-            
-            if not context.strip():
-                return {"response": "I apologize, but I couldn't find any readable documents in the knowledge base to help answer your question."}
-            
-            # Prepare prompt with context
-            prompt = f"""You are a helpful AI assistant. Use the following context to answer the question. 
-            If you cannot find the answer in the context, say so.
+            return context_docs
 
-            Context:
-            {context}
+        context_docs = await asyncio.to_thread(get_s3_docs)
+        
+        context = "\n\n".join(context_docs)
+        
+        if not context.strip():
+            return "I apologize, but I couldn't find any readable documents in the knowledge base to help answer your question."
 
-            Question: {user_message}
+        prompt = f"""You are a helpful AI assistant. Use the following context to answer the question.
+        If you cannot find the answer in the context, say so.
 
-            Answer:"""
+        Context:
+        {context}
 
-            # Prepare Bedrock request
-            request_payload = {
-                "inputText": prompt,
-                "textGenerationConfig": {
-                    "maxTokenCount": 512,
-                    "temperature": 0.7,
-                    "topP": 0.9,
-                    "stopSequences": []
-                }
+        Question: {user_message}
+
+        Answer:"""
+
+        request_payload = {
+            "inputText": prompt,
+            "textGenerationConfig": {
+                "maxTokenCount": 512,
+                "temperature": 0.7,
+                "topP": 0.9,
+                "stopSequences": []
             }
+        }
 
-            logger.info("Sending request to Bedrock with context")
-
-            response = bedrock_runtime.invoke_model(
+        def invoke_bedrock():
+            return bedrock_runtime.invoke_model(
                 modelId=BEDROCK_MODEL_ID,
                 body=json.dumps(request_payload),
                 accept='application/json',
                 contentType='application/json'
             )
-            
-            # Parse the response
-            response_body = json.loads(response.get('body').read())
-            logger.info("Raw Bedrock Response:")
-            logger.info(json.dumps(response_body, indent=2))
-            
-            # Extract the response
-            if 'results' in response_body and len(response_body['results']) > 0:
-                answer = response_body['results'][0].get('outputText', '')
-            else:
-                answer = "I apologize, but I couldn't generate a proper response at the moment."
-            
-            return {"response": answer}
-            
-        except ClientError as e:
-            error_code = e.response['Error'].get('Code', 'Unknown')
-            error_message = e.response['Error'].get('Message', str(e))
-            logger.error(f"AWS Error ({error_code}): {error_message}")
-            logger.error(f"Full error: {str(e)}")
-            
-            if error_code == 'NoSuchKey':
-                raise HTTPException(
-                    status_code=404,
-                    detail="Could not find the requested document in the knowledge base."
-                )
-            elif error_code == 'AccessDenied':
-                raise HTTPException(
-                    status_code=403,
-                    detail="Access denied to S3 bucket. Please check your AWS credentials and permissions."
-                )
-            else:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"AWS error: {error_message}"
-                )
+
+        response = await asyncio.to_thread(invoke_bedrock)
+        
+        response_body = json.loads(response.get('body').read())
+        
+        if 'results' in response_body and len(response_body['results']) > 0:
+            answer = response_body['results'][0].get('outputText', '')
+        else:
+            answer = "I apologize, but I couldn't generate a proper response at the moment."
+        
+        return answer
+
+    except ClientError as e:
+        error_code = e.response['Error'].get('Code', 'Unknown')
+        error_message = e.response['Error'].get('Message', str(e))
+        logger.error(f"AWS Error in get_bedrock_assistance ({error_code}): {error_message}")
+        return f"An AWS error occurred: {error_message}"
+    except Exception as e:
+        logger.error(f"Unexpected error in get_bedrock_assistance: {str(e)}")
+        logger.error(traceback.format_exc())
+        return "An unexpected error occurred while getting assistance."
+
+@app.post("/api/chat")
+async def chat_with_knowledge_base(payload: dict = Body(...)):
+    """
+    Chat endpoint that uses Amazon Titan with context from S3 knowledge base.
+    Expects: { "message": "..." }
+    Returns: { "response": "..." }
+    """
+    try:
+        user_message = payload.get("message")
+        if not user_message:
+            raise HTTPException(status_code=400, detail="Missing 'message' in request body")
+
+        response = await get_bedrock_assistance(user_message)
+        
+        return {"response": response}
             
     except Exception as e:
         logger.error(f"Unexpected error in chat endpoint: {str(e)}")
