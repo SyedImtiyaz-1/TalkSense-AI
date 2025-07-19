@@ -1,25 +1,31 @@
-# Python Backend .gitignore
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.pyc
-
-# Distribution / packaging
-dist/
+*.so
+.Python
+env/
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
 *.egg-info/
+.installed.cfg
 *.egg
+
+# Environment files
+.env
+.env.*
+!.env.example
+venv/
+.venv/
 
 # IDE
 .idea/
@@ -27,28 +33,6 @@ build/
 *.swp
 *.swo
 
-# Logs
-*.log
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# AWS
-.aws/
+# OS
+.DS_Store
+Thumbs.db

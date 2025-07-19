@@ -1,42 +1,19 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from './ui/Button';
-import { Sun, Moon, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function Navbar() {
   const location = useLocation();
-  const [isDark, setIsDark] = React.useState(() => {
-    // Check localStorage and system preference
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-      return savedTheme === 'dark';
-    }
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
-
-  React.useEffect(() => {
-    // Apply theme on mount and theme change
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  }, [isDark]);
-
-  const toggleTheme = () => {
-    setIsDark(!isDark);
-  };
 
   const isActiveRoute = (path) => location.pathname === path;
 
   const navItems = [
     { path: '/', label: 'Dashboard' },
-    { path: '/chatbot', label: 'AI Chatbot' },
-    { path: '/voice-transcriber', label: 'Voice Transcriber' },
+    // { path: '/chatbot', label: 'AI Chatbot' },
+    // { path: '/voice-transcriber', label: 'Voice Transcriber' },
     { path: '/call-simulator', label: 'Call Simulator' },
     { path: '/data-manager', label: 'Data Manager' },
   ];
@@ -45,8 +22,8 @@ export function Navbar() {
     cn(
       'relative px-3 py-2 text-sm font-medium transition-colors hover:text-primary',
       {
-        'text-primary dark:text-primary-foreground': isActive,
-        'text-muted-foreground hover:text-foreground dark:text-muted-foreground dark:hover:text-foreground': !isActive,
+        'text-primary': isActive,
+        'text-muted-foreground hover:text-foreground': !isActive,
       }
     );
 
@@ -73,14 +50,6 @@ export function Navbar() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-9 px-0"
-            onClick={toggleTheme}
-          >
-            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
             className="md:hidden w-9 px-0"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
@@ -99,7 +68,7 @@ export function Navbar() {
                   'px-3 py-2 text-sm rounded-md transition-colors',
                   isActiveRoute(path)
                     ? 'bg-primary text-primary-foreground'
-                    : 'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50'
+                    : 'hover:bg-accent hover:text-accent-foreground'
                 )}
                 onClick={() => setIsMobileMenuOpen(false)}
               >

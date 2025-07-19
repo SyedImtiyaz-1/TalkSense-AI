@@ -4,7 +4,9 @@
 
 **Call Insights** is a full-stack application that provides real-time and post-call analytics for call centers and customer support teams. It leverages AI-powered transcription, sentiment analysis, and data management to enhance call center operations.
 
-## Features
+![1752240418884](images/README/1752240418884.png)
+
+Features
 
 - **AI Chatbot**: Interact with an AI assistant for instant support and insights.
 - **Voice Transcriber**: Real-time speech-to-text transcription using your microphone.
@@ -43,23 +45,24 @@
 ### Backend Setup
 
 1. **Install dependencies:**
+
    ```bash
    cd backend
    python3 -m venv venv
    source venv/bin/activate
    pip install -r requirements.txt
    ```
-
 2. **Configure AWS credentials:**
    Create a `.env` file in `backend/` with:
+
    ```
    AWS_ACCESS_KEY_ID=your-access-key
    AWS_SECRET_ACCESS_KEY=your-secret-key
    S3_BUCKET_NAME=your-s3-bucket
    AWS_DEFAULT_REGION=us-east-1
    ```
-
 3. **Run the backend:**
+
    ```bash
    uvicorn main:app --reload --host 0.0.0.0 --port 8000
    ```
@@ -67,18 +70,19 @@
 ### Frontend Setup
 
 1. **Install dependencies:**
+
    ```bash
    cd frontend
    npm install
    ```
-
 2. **Run the frontend:**
+
    ```bash
    npm run dev
    ```
-   The app will be available at [http://localhost:5173](http://localhost:5173) (or as shown in your terminal).
 
-3. **API Proxy:**  
+   The app will be available at [http://localhost:5173](http://localhost:5173) (or as shown in your terminal).
+3. **API Proxy:**
    The frontend is configured (via `vite.config.js`) to proxy `/api` requests to the backend at `http://localhost:8000`.
 
 ### Usage
